@@ -1,16 +1,24 @@
 import React, { useEffect, useState } from 'react';
 import './ListProduct.css';
+import { useNavigate } from 'react-router-dom'; // Import useNavigate instead of useHistory
 import cross_icon from '../../assets/cross_icon.png';
+import dropdown from '../../assets/dropdown_icon.png';
 
 const ListProduct = () => {
   const [allproducts, setAllProducts] = useState([]);
+  const navigate = useNavigate();
 
   const fetchInfo = async () => {
     try {
       const response = await fetch('http://localhost:4000/allproducts');
       const data = await response.json();
-      setAllProducts(data);
-      console.log(data); // Check fetched data
+      console.log(data);
+      // Check if the data is an array before setting it
+      if (Array.isArray(data)) {
+        setAllProducts(data);
+      } else {
+        console.error("Fetched data is not an array:", data);
+      }
     } catch (error) {
       console.error("Error fetching products:", error);
     }
@@ -36,21 +44,25 @@ const ListProduct = () => {
     }
   };
 
+  const editProduct = (id) => {
+    navigate(`/editproduct/${id}`);
+  };
+
   return (
     <div className="list-product">
       <h1>All Product List</h1>
       <div className="listproduct-format-main">
         <p>Products</p>
         <p>Title</p>
-        {/* <p>Color</p> */}
         <p>Old Prices</p>
         <p>New Prices</p>
         <p>Category</p>
+        <p>Edit</p>
         <p>Remove</p>
       </div>
       <div className="listproduct-allproducts">
         <hr />
-        {allproducts.map((product, index) => (
+        {Array.isArray(allproducts) && allproducts.map((product, index) => (
           <React.Fragment key={index}>
             <div className="listproduct-format-main listproduct-format">
               <img
@@ -59,17 +71,17 @@ const ListProduct = () => {
                 className="listproduct-product-icon"
               />
               <p>{product.name}</p>
-              {/* Display old and new prices from variants */}
-              {/* <p>{product.variants.map((variant) => variant.size).join(', ')}</p> */}
-              <p>
-                {product.variants.map((variant) => variant.price).join(', ')}
-              </p>
-              <p>
-                {product.variants.map((variant) => variant.new_price).join(', ')}
-              </p>
+              <p>{product.price}</p>
+              <p>{product.new_price}</p>
               <p>{product.category_id ? product.category_id.name : "N/A"}</p>
               <img
-                onClick={() => remove_product(product._id)} // Use _id to match backend
+                onClick={() => editProduct(product._id)}
+                alt=""
+                className="listproduct-remove-icon"
+                src={dropdown}
+              />
+              <img
+                onClick={() => remove_product(product._id)}
                 alt=""
                 className="listproduct-remove-icon"
                 src={cross_icon}

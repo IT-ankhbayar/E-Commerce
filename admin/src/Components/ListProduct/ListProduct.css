@@ -3,7 +3,7 @@
     flex-direction: column;
     align-items: center;
     width: 100%;
-    max-width: 800px; /* Added max-width for better responsiveness */
+    max-width: 850px; /* Added max-width for better responsiveness */
     height: 100%;
     padding: 20px 30px; 
     margin: 20px auto; /* Center aligning and adjusting margin */
@@ -13,7 +13,7 @@
 
 .listproduct-format-main {
     display: grid;
-    grid-template-columns: 1fr 3fr 1fr 1fr 1fr 1fr;
+    grid-template-columns: 1fr 3fr 1fr 1fr 1fr 1fr 1fr;
     gap: 10px;
     width: 100%;
     padding: 20px 0px;

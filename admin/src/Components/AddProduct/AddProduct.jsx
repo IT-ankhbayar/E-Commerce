@@ -1,58 +1,68 @@
 import React, { useState, useEffect } from 'react';
 import './AddProduct.css';
 import upload_area from '../../assets/upload_area.svg';
+import { sizes } from './Size';
 
 const AddProduct = () => {
-    const [categories, setCategories] = useState([]); // Store categories
+    const [categories, setCategories] = useState([]);
     const [images, setImages] = useState([]);
     const [productDetails, setProductDetails] = useState({
         name: "",
         title: "",
         description: "",
-        category_id: Number, 
+        category_id: "",
+        price: "",
+        new_price: "",
         images: [],
         created_at: "",
         updated_at: "",
-        variants: [{
-            size: "",
-            color: "",
-            quantity: "",
-            price: "",
-            new_price: "",
-        }],
+        variants: [
+            {
+                color: "",
+                sizes: sizes.map((size) => ({
+                    size_id: size.id,
+                    quantity: 0,
+                })),
+            },
+        ],
     });
-    
-    // Fetch categories from the database
+
     useEffect(() => {
         const fetchCategories = async () => {
             try {
                 const response = await fetch('http://localhost:4000/categories');
                 const data = await response.json();
                 if (data.success) {
-                    setCategories(data.categories); // Update state with fetched categories
+                    setCategories(data.categories);
                 }
             } catch (error) {
                 console.error('Error fetching categories:', error);
             }
         };
-
         fetchCategories();
     }, []);
 
     const imageHandler = (e) => {
-        setImages([...images, ...e.target.files]); // Allow adding multiple files
+        setImages([...images, ...e.target.files]);
     };
 
-    // const changeHandler = (e) => {
-    //     setProductDetails({ ...productDetails, [e.target.name]: e.target.value });
-    // };
     const changeHandler = (e) => {
         const { name, value } = e.target;
-    
         setProductDetails((prevDetails) => ({
             ...prevDetails,
-            [name]: value, // Only update the corresponding field
+            [name]: value,
         }));
+    };
+
+    const sizeQuantityHandler = (variantIndex, sizeId, quantity) => {
+        const updatedVariants = [...productDetails.variants];
+        const sizeIndex = updatedVariants[variantIndex].sizes.findIndex(
+            (size) => size.size_id === sizeId
+        );
+        if (sizeIndex !== -1) {
+            updatedVariants[variantIndex].sizes[sizeIndex].quantity = parseInt(quantity, 10);
+        }
+        setProductDetails({ ...productDetails, variants: updatedVariants });
     };
 
     const variantChangeHandler = (index, e) => {
@@ -64,7 +74,13 @@ const AddProduct = () => {
     const addVariant = () => {
         setProductDetails({
             ...productDetails,
-            variants: [...productDetails.variants, { size: "", color: "", quantity: "", price: "", new_price: "" }]
+            variants: [
+                ...productDetails.variants,
+                {
+                    color: "",
+                    sizes: sizes.map((size) => ({ size_id: size.id, quantity: 0 })),
+                },
+            ],
         });
     };
 
@@ -74,95 +90,123 @@ const AddProduct = () => {
     };
 
     const Add_Product = async () => {
-        if (!productDetails.category_id || !productDetails.name || !productDetails.title || !productDetails.description) {
-            alert("Please fill in all required fields.");
-            return;
-        }
-    
+        const formattedVariants = productDetails.variants.flatMap((variant) =>
+            variant.sizes
+                .filter((size) => size.quantity > 0) // Exclude sizes with zero quantity
+                .map((size) => ({
+                    size: sizes.find((s) => s.id === size.size_id)?.name, // Map size_id to name
+                    color: variant.color,
+                    quantity: size.quantity, // Ensure quantity is included
+                }))
+        );
+
+        const newProduct = {
+            ...productDetails,
+            variants: formattedVariants,
+            images: [], // Add uploaded images as needed
+        };
+
         const formData = new FormData();
-        images.forEach((image) => formData.append('productImages', image)); // Append all images
-    
+        images.forEach((image) => formData.append('productImages', image));
+
         const uploadResponse = await fetch('http://localhost:4000/upload', {
             method: 'POST',
             body: formData,
         });
         const uploadData = await uploadResponse.json();
-    
+
         if (uploadData.success) {
-            const newProduct = {
-                ...productDetails,
-                images: uploadData.image_urls, // Set image URLs from the upload response
-            };
-    
-            await fetch('http://localhost:4000/addproduct', {
+            newProduct.images = uploadData.image_urls;
+
+            const response = await fetch('http://localhost:4000/addproduct', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(newProduct),
-            }).then((resp) => resp.json())
-              .then((data) => {
-                  if (data.success) {
-                      alert("Product added successfully!");
-                  } else {
-                      alert("Failed to add product.");
-                  }
-              });
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                alert("Product added successfully!");
+            } else {
+                alert("Failed to add product.");
+            }
         } else {
             alert('Image upload failed. Please try again.');
         }
-    };    
+    };
 
+  
     return (
         <div className="add-product">
             {/* Product Details */}
             <div className="addproduct-itemfield">
-                <p>Product Name</p>
+                <p>Бүтээгдэхүүний нэр</p>
                 <input
                     value={productDetails.name}
                     onChange={changeHandler}
                     type="text"
                     name="name"
-                    placeholder="Enter product name"
+                    placeholder="Бүтээгдэхүүний нэрийг оруулна уу"
                 />
             </div>
             <div className="addproduct-itemfield">
-                <p>Product Title</p>
+                <p>Бүтээгдэхүүний гарчиг</p>
                 <input
                     value={productDetails.title}
                     onChange={changeHandler}
                     type="text"
                     name="title"
-                    placeholder="Enter product title"
+                    placeholder="Бүтээгдэхүүний гарчигийг оруулна уу"
                 />
             </div>
             <div className="addproduct-itemfield">
-                <p>Product Description</p>
+                <p>Бүтээгдэхүүний Тайлбар</p>
                 <input
                     value={productDetails.description}
                     onChange={changeHandler}
                     type="text"
                     name="description"
-                    placeholder="Enter product description"
+                    placeholder="Бүтээгдэхүүний Тайлбарийг оруул"
                 />
             </div>
             <div className="addproduct-itemfield">
-    <p>Product Category</p>
-    <select
-        value={productDetails.category_id}  // Ensures the correct category is selected
-        onChange={changeHandler}            // Calls changeHandler on change
-        name="category_id"                 // Ensures the correct field is updated in state
-    >
-        <option value="" disabled>Select a category</option>
-        {categories.map((category) => (
-            <option key={category._id} value={category._id}>
-                {category.description}  {/* Displays the description but saves only the category_id */}
-            </option>
-        ))}
-    </select>
-</div>
-
+            <p>Бүтээгдэхүүний Каталоги</p>
+                <select
+                    value={productDetails.category_id}  // Ensures the correct category is selected
+                    onChange={changeHandler}            // Calls changeHandler on change
+                    name="category_id"                 // Ensures the correct field is updated in state
+                >
+                    <option value="" disabled>Каталоги сонгоно уу</option>
+                    {categories.map((category) => (
+                        <option key={category._id} value={category._id}>
+                            {category.description}  {/* Displays the description but saves only the category_id */}
+                        </option>
+                    ))}
+                </select>
+            </div>
+            <div className="addproduct-itemfield">
+                <p>Үнэ</p>
+                <input
+                    value={productDetails.price}
+                    onChange={changeHandler}
+                    type="number"
+                    name="price"
+                    placeholder="Үнийн мэдээллийг оруулна уу"
+                />
+            </div>
+            <div className="addproduct-itemfield">
+                <p>Шинэ үнэ</p>
+                <input
+                    value={productDetails.new_price}
+                    onChange={changeHandler}
+                    type="number"
+                    name="new_price"
+                    placeholder="Шинэ үнийг оруулна уу"
+                />
+            </div>
             {/* Image Upload */}
             <div className="addproduct-itemfield">
-                <p>Images</p>
+                <p>Зураг оруулах</p>
                 <label htmlFor="file-input">
                     <div className="image-preview-container">
                         {images.length > 0 ? (
@@ -184,67 +228,40 @@ const AddProduct = () => {
 
             {/* Product Variant Section */}
             <div className="variants-section">
-                <h3>Product Variants</h3>
-                {productDetails.variants.map((variant, index) => (
-                    <div key={index} className="variant-item">
+                <h3>Variants</h3>
+                {productDetails.variants.map((variant, variantIndex) => (
+                    <div key={variantIndex} className="variant-item">
                         <div className="addproduct-itemfield">
-                            <p>Size</p>
-                            <input
-                                value={variant.size}
-                                onChange={(e) => variantChangeHandler(index, e)}
-                                type="text"
-                                name="size"
-                                placeholder="Enter size"
-                            />
+                            <h3>Sizes and Quantities for Variant {variantIndex + 1}</h3>
+                            {variant.sizes.map((size) => (
+                                <div key={size.size_id} className="size-quantity-field">
+                                    <span>{sizes.find((s) => s.id === size.size_id).name}</span>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={size.quantity}
+                                        placeholder="Enter quantity"
+                                        onChange={(e) =>
+                                            sizeQuantityHandler(variantIndex, size.size_id, e.target.value)
+                                        }
+                                    />
+                                </div>
+                            ))}
                         </div>
                         <div className="addproduct-itemfield">
                             <p>Color</p>
                             <input
                                 value={variant.color}
-                                onChange={(e) => variantChangeHandler(index, e)}
+                                onChange={(e) => variantChangeHandler(variantIndex, e)}
                                 type="text"
                                 name="color"
                                 placeholder="Enter color"
                             />
                         </div>
-                        <div className="addproduct-itemfield">
-                            <p>Quantity</p>
-                            <input
-                                value={variant.quantity}
-                                onChange={(e) => variantChangeHandler(index, e)}
-                                type="number"
-                                name="quantity"
-                                placeholder="Enter quantity"
-                            />
-                        </div>
-                        <div className="addproduct-itemfield">
-                            <p>Price</p>
-                            <input
-                                value={variant.price}
-                                onChange={(e) => variantChangeHandler(index, e)}
-                                type="number"
-                                name="price"
-                                placeholder="Enter price"
-                            />
-                        </div>
-                        <div className="addproduct-itemfield">
-                            <p>New Price</p>
-                            <input
-                                value={variant.new_price}
-                                onChange={(e) => variantChangeHandler(index, e)}
-                                type="number"
-                                name="new_price"
-                                placeholder="Enter new price"
-                            />
-                        </div>
-                        <button onClick={() => removeVariant(index)} className="remove-variant-btn">
-                            Remove Variant
-                        </button>
+                        <button onClick={() => removeVariant(variantIndex)}>Remove Variant</button>
                     </div>
                 ))}
-                <button onClick={addVariant} className="add-variant-btn">
-                    Add Another Variant
-                </button>
+                <button onClick={addVariant}>Add Variant</button>
             </div>
 
             <button onClick={Add_Product} className="addproduct-btn">
