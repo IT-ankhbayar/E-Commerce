@@ -70,6 +70,19 @@ app.post("/upload", upload.array('productImages', 10), (req, res) => {
 });
 
 // Schema for Creating Products
+
+const sub_category = mongoose.model('sub_categories', {
+    _id: {
+        type: Number,
+        required: true,
+    },
+    name: { type: String, required: true },
+    parent_id: { type: Array, ref: 'categories' }, // Adjust `ref` if it points to a different collection
+    description: { type: String, required: true },
+    created_at: { type: Date, default: Date.now },
+    updated_at: { type: Date, default: Date.now },
+});
+
 const ProductVariant = mongoose.model("ProductVariant", {
     _id: {
         type: Number,
@@ -88,14 +101,6 @@ const ProductVariant = mongoose.model("ProductVariant", {
         required: true,
     },
     quantity: {
-        type: Number,
-        required: true,
-    },
-    price: {
-        type: Number,
-        required: true,
-    },
-    new_price: {
         type: Number,
         required: true,
     },
@@ -134,6 +139,14 @@ const Product = mongoose.model("Product", {
         type: String,
         required: true,
     },
+    price: {
+        type: Number,
+        required: true,
+    },
+    new_price: {
+        type: Number,
+        required: true,
+    },
     variants: {
         type: Array,
         ref: "ProductVariant"  // Reference to ProductVariant model
@@ -148,81 +161,64 @@ const Product = mongoose.model("Product", {
     },
 });
 
-const sub_category = mongoose.model('sub_categories', {
-    _id: {
-        type: Number,
-        required: true,
-    },
-    name: { type: String, required: true },
-    parent_id: { type: Array, ref: 'categories' }, // Adjust `ref` if it points to a different collection
-    description: { type: String, required: true },
-    created_at: { type: Date, default: Date.now },
-    updated_at: { type: Date, default: Date.now },
-});
-
 // Add Product Endpoint with Manual _id Generation
 app.post('/addproduct', async (req, res) => {
     try {
-        // Manually setting the product ID
+        // Step 1: Manually assign a product ID (this could be based on the last product ID)
         const lastProduct = await Product.findOne().sort({ _id: -1 });
-        const id = lastProduct ? lastProduct._id + 1 : 1;
+        const productId = lastProduct ? lastProduct._id + 1 : 1;  // Assign unique product ID
 
+        // Step 2: Create the Product document
         const product = new Product({
-            _id: id,
+            _id: productId,
             name: req.body.name,
             images: req.body.images,
-            category_id: req.body.category_id, // This is now the category ID
+            category_id: req.body.category_id,
             title: req.body.title,
             description: req.body.description,
-            variants: [], // Empty array for variants
+            price: req.body.price,
+            new_price: req.body.new_price,
+            variants: []  // Initialize empty variants array
         });
 
+        // Save the product document
         await product.save();
 
-        // Handle Product Variants
-        const variantPromises = [];
-        if (req.body.variants && req.body.variants.length > 0) {
-            for (let i = 0; i < req.body.variants.length; i++) {
-                const variant = req.body.variants[i];
-                const variantId = id * 1000 + (i + 1); // Generate unique variantId
-                const productVariant = new ProductVariant({
-                    _id: variantId,
-                    product_id: product._id,
-                    size: variant.size,
-                    color: variant.color,
-                    quantity: variant.quantity,
-                    price: variant.price,
-                    new_price: variant.new_price,
-                });
+        // Step 3: Sort variants (if needed, based on size or other criteria)
+        const sortedVariants = req.body.variants.sort((a, b) => a.size.localeCompare(b.size));
 
-                // Save the variant and store the promise for later use
-                const saveVariantPromise = productVariant.save().then((savedVariant) => {
-                    product.variants.push(savedVariant._id); // Push variant ID to product
-                });
+        // Step 4: Generate variant IDs sequentially and store them in a local array
+        let variantIdCounter = productId * 1000;  // Start with a base number based on the product ID (e.g., 61001)
 
-                variantPromises.push(saveVariantPromise);
-            }
-        }
+        const variantsWithIds = sortedVariants.map((variant, index) => {
+            const variantId = variantIdCounter + (index + 1);  // Ensure sequential IDs (61001, 61002, etc.)
 
-        // Wait for all variants to be saved before updating the product
-        await Promise.all(variantPromises);
-
-        // Update the product with variant IDs
-        await product.save();
-
-        // Return the saved product with populated variant and category data
-        const populatedProduct = await Product.findById(product._id)
-            .populate('variants')  // Populate variants
-            .populate('category_id'); // Populate category details using category_id
-
-        res.json({
-            success: true,
-            product: populatedProduct, // Return the full populated product
+            // Assign ID to each variant before saving
+            return {
+                _id: variantId,
+                product_id: product._id,
+                size: variant.size,
+                color: variant.color,
+                quantity: variant.quantity
+            };
         });
 
+        // Step 5: Save the variants with manually assigned IDs
+        const savedVariants = await ProductVariant.insertMany(variantsWithIds);
+
+        // Step 6: Add the saved variant IDs to the product document
+        product.variants = savedVariants.map(variant => variant._id);
+
+        // Step 7: Save the product with the variant IDs populated
+        await product.save();
+
+        // Step 8: Populate the product with its variants
+        const populatedProduct = await Product.findById(product._id).populate('variants');
+
+        // Send response back with the populated product
+        res.json({ success: true, product: populatedProduct });
     } catch (error) {
-        console.error("Error while adding product:", error);
-        res.status(500).json({ success: false, error: error.message });
+        res.status(500).json({ success: false, message: error.message });
     }
 });
 
@@ -259,28 +255,94 @@ app.post('/removeproduct', async (req, res) => {
             message: "Error removing product and variants"
         });
     }
+    const variantPromises = req.body.variants.map((variant, i) => {
+        if (!variant.size || !variant.color || variant.quantity === undefined) {
+            throw new Error(`Variant ${i + 1} is missing size, color, or quantity`);
+        }
+        
+        const variantId = product._id * 1000 + (i + 1);
+        const productVariant = new ProductVariant({
+            _id: variantId,
+            product_id: product._id,
+            size: variant.size,
+            color: variant.color,
+            quantity: variant.quantity,
+        });
+    
+        return productVariant.save().then((savedVariant) => {
+            product.variants.push(savedVariant._id);
+        });
+    });
+    req.body.variants.forEach((variant, index) => {
+        if (!variant.size || !variant.color || typeof variant.quantity !== "number") {
+            console.error(`Variant ${index + 1} is invalid:`, variant);
+            throw new Error(`Variant ${index + 1} is missing required fields.`);
+        }
+    });
+    await Promise.all(variantPromises);
 });
+
+app.put('/editproduct/:id', async (req, res) => {
+    const { id } = req.params;
+    const updatedProduct = req.body; 
+    try {
+        await Product.findByIdAndUpdate(id, updatedProduct);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 // Get All Products Endpoint
 app.get('/allproducts', async (req, res) => {
     try {
-        const products = await Product.find({}).populate('variants').populate('category_id', 'name');// Populate the variants
-        console.log("All Products Fetched");
-        res.json(products);
+        // Fetch all products and populate category_id
+        const products = await Product.find({}).populate('category_id', 'name'); 
+        
+        
+
+        // Ensure that variants are valid numbers
+        const validVariants = products.flatMap(product => 
+            product.variants.filter(variantId => typeof variantId === 'number')
+        );
+
+        // Fetch only valid product variants
+        const productVariants = await ProductVariant.find({ _id: { $in: validVariants } });
+
+        // Map the variants back to each product
+        const enrichedProducts = products.map(product => ({
+            ...product.toObject(),
+            variants: product.variants.map(variantId =>
+                productVariants.find(variant => variant._id === variantId)
+            )
+        }));
+
+        
+        res.json(enrichedProducts);
     } catch (error) {
         console.error("Error fetching products:", error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
 
-
 // User Model Schema
 const Users = mongoose.model('Users', {
-    name: {
-        type: String,
-    },
+
     email: {
         type: String,
         unique: true,
+    },
+    phone: {
+        type: String,
+    },
+    first_name: {
+        type: String,
+    },
+    last_name: {
+        type: String,
+    },
+    avatar_id: {
+        type: String,
     },
     password: {
         type: String,
@@ -288,39 +350,48 @@ const Users = mongoose.model('Users', {
     cartData: {
         type: Object,
     },
-    date: {
+    created_at: {
         type: Date,
         default: Date.now,
-    }
+    },
+    updated_at: {
+        type: Date,
+        default: Date.now,
+    },
 });
 
 // User Registration Endpoint
 app.post('/signup', async (req, res) => {
     let check = await Users.findOne({ email: req.body.email });
     if (check) {
-        return res.status(400).json({ success: false, errors: "Existing user found with same email address" });
+        return res.status(400).json({ success: false, errors: "Existing user found with the same email address" });
     }
-    let cart = {};
-    for (let i = 0; i < 300; i++) {
-        cart[i] = 0;
-    }
+
     const user = new Users({
-        name: req.body.username,
         email: req.body.email,
+        phone: req.body.phone,
+        first_name: req.body.first_name,
+        last_name: req.body.last_name,
+        avatar_id: req.body.avatar_id,
         password: req.body.password,
-        cartData: cart,
+        cartData: {},
+        created_at: new Date(),
+        updated_at: new Date(),
     });
 
-    await user.save();
+    try {
+        await user.save();
+        const data = {
+            user: {
+                id: user.id
+            }
+        };
 
-    const data = {
-        user: {
-            id: user.id
-        }
-    };
-
-    const token = jwt.sign(data, 'secret_ecom');
-    res.json({ success: true, token });
+        const token = jwt.sign(data, 'secret_ecom');
+        res.json({ success: true, token });
+    } catch (err) {
+        res.status(500).json({ success: false, errors: err.message });
+    }
 });
 
 // User Login Endpoint
@@ -383,3 +454,4 @@ app.listen(port, (error) => {
         console.log("Error: " + error);
     }
 });
+
